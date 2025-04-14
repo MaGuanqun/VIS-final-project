@@ -272,7 +272,7 @@ test_loader = DataLoader(test_data_list, batch_size=1, shuffle=False)
 
 
 
-model = GraphNN(in_channels=1, hidden_channels=32, dropout_p=0.5, use_residual=True)
+model = GraphNN(in_channels=1, hidden_channels=32, dropout_p=0.3, use_residual=True)
 model = model.to(device)
 
 # ---------------------------
