@@ -1,11 +1,14 @@
+import os
+# os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
+os.environ["OMP_NUM_THREADS"] = str(os.cpu_count())
+os.environ["MKL_NUM_THREADS"] = str(os.cpu_count())
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import csv
-import os
 from torch_geometric.data import Data, DataLoader
-from torch_geometric.nn import GCNConv
+from torch_geometric.nn import GCNConv,GraphConv,GATConv
 import platform
 import time
 import random
@@ -24,9 +27,18 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
 
+
+
+
 # Use the MPS backend if available, otherwise fall back to CPU.
 if platform.system() == "Darwin":  # macOS
-    device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
+    device =  torch.device("cpu") #torch.device("mps") if torch.backends.mps.is_available() else
+    num_cores = os.cpu_count()
+    print("Using", num_cores, "CPU cores.")
+    # Set PyTorch to use all available cores for intra-operator parallelism.
+    torch.set_num_threads(num_cores)
+# And optionally for inter-operator parallelism.
+    torch.set_num_interop_threads(num_cores)
 elif platform.system() == "Linux":  # Linux
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 else:  # Default fallback for other systems
@@ -58,7 +70,7 @@ def load_mesh_data(mesh_id, data_dir="."):
     # Read the mesh data from the files.
     
 
-    edge_index = torch.load(edges_file, weights_only=True)
+    edge_index = torch.load(edges_file, weights_only=True).to(torch.int64)
 
     sf = torch.load(sf_file, weights_only=True)
     labels = torch.load(labels_file, weights_only=True)
@@ -162,61 +174,110 @@ def save_data(data_item, idx,test_data_size,predicted):
 #     return Data(x=x, edge_index=tri_edge_index, y=y)
 
 
+
 class GraphNN(nn.Module):
     def __init__(self, in_channels, hidden_channels, dropout_p=0.3, use_residual=False):
-        """
-        Modified network structure with:
-          - Three GCNConv layers to increase depth.
-          - Batch Normalization after the first two layers.
-          - Dropout for regularization.
-          - Optionally adding a residual connection from the input.
-          
-        Parameters:
-          - in_channels: Number of input features (1 in this case).
-          - hidden_channels: Number of hidden units (e.g., 16, 32, 64, etc.).
-          - dropout_p: Dropout probability.
-          - use_residual: If True, adds a skip connection from the input features to the output.
-        """
         super(GraphNN, self).__init__()
-        self.use_residual = use_residual
-
-        # First Graph Convolution layer.
-        self.conv1 = GCNConv(in_channels, hidden_channels)
-        self.bn1 = nn.BatchNorm1d(hidden_channels)
-
-        # Second layer increases the model depth.
-        self.conv2 = GCNConv(hidden_channels, hidden_channels)
-        self.bn2 = nn.BatchNorm1d(hidden_channels)
-        
-        self.conv3 = GCNConv(hidden_channels, hidden_channels)
-        self.bn3 = nn.BatchNorm1d(hidden_channels)
-        
-        self.conv4 = GCNConv(hidden_channels, 4)
-        self.dropout = nn.Dropout(p=dropout_p)
-        # # Optional residual connection: project input features to match output size.
-        if use_residual:
-            self.res_fc = nn.Linear(in_channels, 4)
-        
-        # Dropout parameter to help regularize the network.
-        self.dropout = nn.Dropout(p=dropout_p)
+        # Use attention-based graph convolutions.
+        self.conv1 = GATConv(in_channels, hidden_channels[0])
+        self.conv2 = GATConv(hidden_channels[0], hidden_channels[1])
+        # self.conv3 = GATConv(hidden_channels[1], hidden_channels[2])
+        self.conv4 = GATConv(hidden_channels[1], 4)  # 4 output classes
+        # self.dropout = nn.Dropout(dropout_p)
 
     def forward(self, data):
         x, edge_index = data.x, data.edge_index
-        h = F.relu(self.bn1(self.conv1(x, edge_index)))
-        h = self.dropout(h)
-        h = F.relu(self.bn2(self.conv2(h, edge_index)))
-        h = self.dropout(h)
-        h = F.relu(self.bn3(self.conv3(h, edge_index)))
-        h = self.dropout(h)
-        h = self.conv4(h, edge_index)
-        if self.use_residual:
-            # Directly projects x to one logit per node and adds it.
-            h = h + self.res_fc(x)
-        return h # Shape: [num_nodes, 4]
+        # First attention layer.
+        x = self.conv1(x, edge_index)
+        x = F.relu(x)
+        # x = self.dropout(x)
+        # Second attention layer.
+        x = self.conv2(x, edge_index)
+        x = F.relu(x)
+        # x = self.dropout(x)
+
+        # x = self.conv3(x, edge_index)
+        # x = F.relu(x)
+        # x = self.dropout(x)
+        # Final layer to get logits.
+        x = self.conv4(x, edge_index)
+        return x
+
+
+# # GraphConv-based Node Classifier
+# class GraphNN(nn.Module):
+#     def __init__(self, in_channels, hidden_channels, dropout_p=0.3, use_residual=False):
+#         super(GraphNN, self).__init__()
+
+#         self.conv1 = GraphConv(in_channels, hidden_channels[0])
+#         self.Linear1 = nn.Linear(hidden_channels[0],hidden_channels[1])
+#         self.conv2 = GraphConv(hidden_channels[1],hidden_channels[2])
+#         self.Linear2 = nn.Linear(hidden_channels[2],4)
+
+#     def forward(self, data):
+#         x, edge_index = data.x, data.edge_index
+#         x = x.reshape((-1,1))
+#         x = self.conv1(x, edge_index)
+#         x = F.relu(x)
+#         x = self.Linear1(x)
+#         x = F.relu(x)
+#         x = self.conv2(x, edge_index)
+#         x = F.relu(x)
+#         x = self.Linear2(x)
+#         return x
+
+
+# class GraphNN(nn.Module):
+#     def __init__(self, in_channels, hidden_channels, dropout_p=0.3, use_residual=False):
+#         """
+#         Modified network structure with:
+#           - Three GCNConv layers to increase depth.
+#           - Batch Normalization after the first two layers.
+#           - Dropout for regularization.
+#           - Optionally adding a residual connection from the input.
+          
+#         Parameters:
+#           - in_channels: Number of input features (1 in this case).
+#           - hidden_channels: List of hidden units for each layer (e.g., [32, 16]).
+#           - dropout_p: Dropout probability.
+#           - use_residual: If True, adds a skip connection from the input features to the output.
+#         """
+#         super(GraphNN, self).__init__()
+#         self.use_residual = use_residual
+
+#         # First Graph Convolution layer.
+#         self.conv1 = GCNConv(in_channels, hidden_channels[0])
+#         self.bn1 = nn.BatchNorm1d(hidden_channels[0])
+
+#         # Second layer increases the model depth.
+#         self.conv2 = GCNConv(hidden_channels[0], hidden_channels[1])
+#         self.bn2 = nn.BatchNorm1d(hidden_channels[1])
+        
+#         # Output layer with 4 classes.
+#         self.conv4 = GCNConv(hidden_channels[1], 4)
+        
+#         # Dropout parameter to help regularize the network.
+#         self.dropout = nn.Dropout(p=dropout_p)
+
+#         # Optional residual connection: project input features to match output size.
+#         if use_residual:
+#             self.res_fc = nn.Linear(in_channels, 4)
+
+#     def forward(self, data):
+#         x, edge_index = data.x, data.edge_index
+#         h = F.relu(self.bn1(self.conv1(x, edge_index)))
+#         h = self.dropout(h)
+#         h = F.relu(self.bn2(self.conv2(h, edge_index)))
+#         h = self.dropout(h)
+#         h = self.conv4(h, edge_index)
+#         if self.use_residual:
+#             # Directly projects x to one logit per node and adds it.
+#             h = h + self.res_fc(x)
+#         return h  # Shape: [num_nodes, 4]
 
 
 
-num_train = 50  # Number of training scalar fields.
+num_train = 500  # Number of training scalar fields.
 num_test = 10   # Number of test scalar fields.
 data_dir = "data"  # Directory containing the mesh data files.
 train_data_list = []
@@ -266,13 +327,14 @@ print(f"Class weights: {class_weights_tensor}")
 # print(f"Training samples: {total_count}, Positive: {total_pos}, Negative: {total_neg}, pos_weight: {pos_weight.item():.2f}")
 
 # Create DataLoaders.
-train_loader = DataLoader(train_data_list, batch_size=10, shuffle=True)
+train_loader = DataLoader(train_data_list, batch_size=1, shuffle=True)
 # We process test (and later training export) one graph at a time.
 test_loader = DataLoader(test_data_list, batch_size=1, shuffle=False)
 
 
+hidden_channels = [16, 32,32]  # Hidden channels for the GCN layers.
 
-model = GraphNN(in_channels=1, hidden_channels=32, dropout_p=0.3, use_residual=True)
+model = GraphNN(in_channels=1, hidden_channels=hidden_channels, dropout_p=0.3, use_residual=True)
 model = model.to(device)
 
 # ---------------------------
