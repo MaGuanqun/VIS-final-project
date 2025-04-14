@@ -8,10 +8,21 @@ from torch_geometric.data import Data, DataLoader
 from torch_geometric.nn import GCNConv
 import platform
 import time
+import random
 
 # Set random seeds for reproducibility.
 # np.random.seed(42)
-torch.manual_seed(42)
+# torch.manual_seed(42)
+
+## fix the random seed for reproducibility
+seed = 42
+torch.manual_seed(seed)
+torch.cuda.manual_seed(seed)
+np.random.seed(seed)
+random.seed(seed)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+
 
 # Use the MPS backend if available, otherwise fall back to CPU.
 if platform.system() == "Darwin":  # macOS
@@ -346,6 +357,8 @@ print("Test Accuracy: {:.4f}".format(accuracy))
 for cls in range(num_classes):
     accuracy = correct_per_class[cls] / total_per_class[cls] if total_per_class[cls] > 0 else 0
     print(f"Class {cls} Accuracy: {accuracy:.4f}")
+
+
 
 
     # # (A) Export the test scalar field as a CSV file.
