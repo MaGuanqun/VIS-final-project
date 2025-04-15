@@ -3,6 +3,17 @@ import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from torch.optim.lr_scheduler import ExponentialLR
 from Arch import *
+import time
+import platform
+
+# Use the MPS backend if available, otherwise fall back to CPU.
+if platform.system() == "Darwin":  # macOS
+    device =  th.device("cpu") #th.device("mps") if th.backends.mps.is_available() else 
+elif platform.system() == "Linux":  # Linux
+    device = th.device("cuda") if th.cuda.is_available() else th.device("cpu")
+else:  # Default fallback for other systems
+    device = th.device("cpu")
+print("Using device:", device)
 
 def cp_ct_loss(cp_logits, ct_logits, cp_lossfn, ct_lossfn, labelsCP, labelsCT, weightsCP):
     # Coarse loss for all
@@ -54,7 +65,7 @@ def measure_fc(model, loader):
     num_false = [[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]]
 
     for batch in loader:
-        out = model(batch[0])
+        out = model(batch[0].to(device))
         pred = out[0].argmax(dim=1)
         cps = (pred == 1)
         norms = (pred == 0)
@@ -89,6 +100,7 @@ if __name__ == "__main__":
     test_loader = DataLoader(SFData(data_folder, val_split, num_data), batch_size=1, shuffle=True)
 
     model = inplaceCNNTwoLevel()
+    model = model.to(device)
     optimizer = th.optim.Adam(model.parameters(), lr=0.015)
     scheduler = ExponentialLR(optimizer, gamma=0.98)
 
@@ -98,22 +110,23 @@ if __name__ == "__main__":
     weightsct = 1.0 / train_data.freqct
     weightsct = weightsct / sum(weightsct)
 
-    loss_cp = th.nn.CrossEntropyLoss(weight=weightscp)
-    loss_ct = th.nn.CrossEntropyLoss(weight=weightsct)
+    loss_cp = th.nn.CrossEntropyLoss(weight=weightscp.to(device))
+    loss_ct = th.nn.CrossEntropyLoss(weight=weightsct.to(device))
 
     batch_size = 1
 
+    start_time = time.time()
     model.train()
     for epoch in range(100):
         total_loss = 0
-        loss = th.FloatTensor([0.0])
+        loss = th.FloatTensor([0.0]).to(device)
         batch_idx = 1
         optimizer.zero_grad()        
 
         for batch in train_loader:
-            out_cp, out_ct = model(batch[0])
-            ycp = batch[1].reshape((-1,))
-            yct = batch[2].reshape((-1,))
+            out_cp, out_ct = model(batch[0].to(device))
+            ycp = batch[1].reshape((-1,)).to(device)
+            yct = batch[2].reshape((-1,)).to(device)
             loss_ = cp_ct_loss(out_cp, out_ct, loss_cp, loss_ct, ycp, yct, weightscp)
             loss += loss_
 
@@ -122,7 +135,7 @@ if __name__ == "__main__":
                 optimizer.step()
                 total_loss += loss.item()
                 optimizer.zero_grad()
-                loss = th.FloatTensor([0.0])
+                loss = th.FloatTensor([0.0]).to(device)
             
             batch_idx += 1
         
@@ -133,4 +146,8 @@ if __name__ == "__main__":
 
     print("test errors:")
     measure_fc(model, test_loader)
+    end_time = time.time()
+    training_time = end_time - start_time
+    print(f"Total training time: {training_time:.2f} seconds")
     th.save(model.state_dict(), "./model_final.th")
+    
