@@ -4,7 +4,7 @@ import torch as th
 
 if __name__ == "__main__":
     data_path = "./data"
-    data_idx = 8
+    data_idx = 0
     output_name = "./test"
 
     inf = open(f"{data_path}/data-{data_idx}-meta.txt")

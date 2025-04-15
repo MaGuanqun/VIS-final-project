@@ -12,6 +12,11 @@ class SFData(Dataset):
 
         for i in range(low,high):
             x = th.load(f"{data_dir}/data-{i}-sf-rect.th")
+
+            x_min = th.min(x)
+            x_max = th.max(x)
+            x = (x - x_min) / (x_max - x_min)
+
             y = th.load(f"{data_dir}/data-{i}-labels-rect.th").to(th.long)
             self.num_each += th.bincount(y.reshape(-1))
             self.datas.append((x,y))
@@ -66,7 +71,7 @@ if __name__ == "__main__":
 
     model = inplaceCNN2()
     optimizer = th.optim.Adam(model.parameters(), lr=0.01)
-    scheduler = ExponentialLR(optimizer, gamma=0.98)
+    scheduler = ExponentialLR(optimizer, gamma=0.97) #98 for moderately big, 97 for very big.
 
     weights = 1.0 / train_data.num_each
     weights = weights / sum(weights)
