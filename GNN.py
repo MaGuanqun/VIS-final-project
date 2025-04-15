@@ -73,6 +73,8 @@ def load_mesh_data(mesh_id, data_dir="."):
     edge_index = torch.load(edges_file, weights_only=True).to(torch.int64)
 
     sf = torch.load(sf_file, weights_only=True)
+    sf = (sf - sf.min()) / (sf.max() - sf.min())  # Normalize values to the range [0, 1]
+
     labels = torch.load(labels_file, weights_only=True)
     labels[labels == -1] = 3
 
@@ -81,6 +83,8 @@ def load_mesh_data(mesh_id, data_dir="."):
         x = sf.view(-1, 1)
     else:
         x = sf
+
+    
 
     return Data(x=x, edge_index=edge_index, y=labels),size
     
