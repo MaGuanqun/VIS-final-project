@@ -5,7 +5,7 @@ from Arch import *
 
 if __name__ == "__main__":
     data_path = "./data"
-    data_idx = 300
+    data_idx = 1951
     output_name = "./test"
     model_class = inplaceCNNTwoLevel
     model_params = "./normalized-98.th"
