@@ -119,12 +119,12 @@ def classifyPoint(points, p):
         return 1
 
 
-def load_data(file_path):
+def load_data(file_path,i):
     nc_data = Dataset(file_path, mode='r')
+    print(nc_data.variables['u'].shape)
 
-
-    u1 = nc_data.variables['u'][-1, :, :].filled(-2.0)  # Shape: (tdim, ydim, xdim)
-    v1 = nc_data.variables['v'][-1, :, :].filled(-2.0)
+    u1 = nc_data.variables['u'][i, :, :].filled(-2.0)  # Shape: (tdim, ydim, xdim)
+    v1 = nc_data.variables['v'][i, :, :].filled(-2.0)
     nc_data.close()
 
 
@@ -136,7 +136,7 @@ def load_data(file_path):
     return out
 
 
-def load_hurricane_isabel(file_path):
+def load_hurricane_isabel(file_path,i):
     XDIM = 500
     YDIM = 500
     ZDIM = 100
@@ -151,7 +151,7 @@ def load_hurricane_isabel(file_path):
     if data.size != expected_size:
         raise ValueError(f"Data size {data.size} does not match expected size {expected_size}.")
     data = data.reshape((TDIM,ZDIM,YDIM, XDIM))
-    slice_z50 = data[0, 50, :, :].copy()  
+    slice_z50 = data[0, i, :, :].copy()  
 
     missing_value = 1e35
     slice_z50[slice_z50 == missing_value] = np.nan
@@ -200,13 +200,29 @@ if __name__ == "__main__":
     file_path.append('./ori/Pf30.bin.gz')
     file_path.append('./ori/FLDSC_1_1800_3600.dat')
     
-    for i in range(len(file_path)):
-        if(i<2):
-            out = load_data(file_path[i])        
-        elif(i==2):
-            out = load_hurricane_isabel(file_path[i])
+    num=50+50+20+2+2+1+1+1+1+1
+    
+    for i in range(num):
+        if(i<50):
+            out = load_data(file_path[0],i+1000)        
+        elif(i<100):
+            out = load_data(file_path[1],i-50+1000)
+        elif(i<120):
+            out = load_hurricane_isabel(file_path[2],i-120)
+        elif(i<122):
+            out =load_data(file_path[0],i-120+1050)
+        elif(i<124):
+            out = load_data(file_path[1],i-122+1050)
+        elif(i<125):
+            out = load_hurricane_isabel(file_path[2],i-124+20)
+        elif(i<126): 
+            out =load_data(file_path[0],i-125+1052)
+        elif(i<127):
+            out = load_data(file_path[1],i-126+1052)
+        elif(i<128):
+            out = load_hurricane_isabel(file_path[2],i-127+21)
         else:
-            out = load_bin(file_path[i]) 
+            out = load_bin(file_path[3]) 
         idx = i
         print(idx)
         w,h= out.shape[0], out.shape[1]

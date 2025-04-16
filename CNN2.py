@@ -65,6 +65,8 @@ def measure_fc(model, loader):
     num_false = [[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]]
 
     for batch in loader:
+        if device.type == 'cuda':
+            th.cuda.empty_cache()
         out = model(batch[0].to(device))
         pred = out[0].argmax(dim=1)
         cps = (pred == 1)
@@ -84,11 +86,11 @@ def measure_fc(model, loader):
 
 if __name__ == "__main__":
 
-    num_data = 2000
-    data_folder = "./data"
+    num_data = 129
+    data_folder = "./real_data"
 
-    train_split = 1800
-    val_split = 1900
+    train_split = 120
+    val_split = 125
 
     train_graphs = []
     val_graphs = []
@@ -96,12 +98,12 @@ if __name__ == "__main__":
 
     train_data = SFData(data_folder, 0, train_split)
     train_loader = DataLoader(train_data, batch_size=1, shuffle=True)
-    val_loader = DataLoader(SFData(data_folder, train_split, val_split), batch_size=1, shuffle=True)
+    val_loader = DataLoader(SFData(data_folder, train_split-5, val_split-5), batch_size=1, shuffle=True)
     test_loader = DataLoader(SFData(data_folder, val_split, num_data), batch_size=1, shuffle=True)
 
     model = inplaceCNNTwoLevel()
     model = model.to(device)
-    optimizer = th.optim.Adam(model.parameters(), lr=0.015)
+    optimizer = th.optim.Adam(model.parameters(), lr=0.02)
     scheduler = ExponentialLR(optimizer, gamma=0.98)
 
     weightscp = 1.0 / train_data.freqcp
@@ -109,6 +111,8 @@ if __name__ == "__main__":
 
     weightsct = 1.0 / train_data.freqct
     weightsct = weightsct / sum(weightsct)
+    
+    print(weightscp)
 
     loss_cp = th.nn.CrossEntropyLoss(weight=weightscp.to(device))
     loss_ct = th.nn.CrossEntropyLoss(weight=weightsct.to(device))
@@ -141,6 +145,8 @@ if __name__ == "__main__":
         
         print(f"Epoch {epoch+1}, Loss: {total_loss:.4f}")
         scheduler.step() # moved here from the epoch. 0.95 -> 0.97
+        if device.type == 'cuda':
+            th.cuda.empty_cache()
         if epoch % 10 == 0:
             measure_fc(model, val_loader)
 
