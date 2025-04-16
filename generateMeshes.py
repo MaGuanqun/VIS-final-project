@@ -40,7 +40,7 @@ adjacency = {
 }
 
 def classifyPoint(points, p):
-    w,h,_ = points.shape
+    _,w,h = points.shape
 
     if p[0] == 0:
         if p[1] == 0:
@@ -77,12 +77,11 @@ def classifyPoint(points, p):
 
     possible_min = True
 
-    val = points[p[0],p[1]]
+    val = points[0,p[0],p[1]]
 
     for n in valid_neighbors:
         off = rel_pos[n]
-
-        otherval = points[p[0] + off[0], p[1] + off[1]]
+        otherval = points[0,p[0] + off[0], p[1] + off[1]]
 
         if val == otherval:
             if off[1] == -1 or (off[1] == 0 and off[0] == -1):
@@ -131,30 +130,24 @@ if __name__ == "__main__":
         w = random.randint(30,100)
         h = random.randint(30,100)
 
-        num_lumps = random.randint(300,800)
+        num_lumps = random.randint(30,50)
         heights = npr.uniform(-0.8,0.8,size=(num_lumps,))
         widths = npr.uniform(100, 1000, size=(num_lumps,))
         x = npr.randint(-10, w+10, size=(num_lumps,))
         y = npr.randint(-10, h+10, size=(num_lumps,))
 
-        out = np.zeros((w,h,1))
-        out_i = np.zeros((w,h,1))
-        out_j = np.zeros((w,h,1))
+        out = np.zeros((1,w,h))
         for i in range(w):
             for j in range(h):
-
-                out_i[i,j,0] = i
-                out_j[i,j,0] = j
 
                 for k in range(num_lumps):
                     dist = (i-x[k])**2 + (j-y[k])**2
-                    if dist < 600:
-                        out[i,j,0] += heights[k]*e**(  -dist / widths[k]  )
+                    out[0,i,j] += heights[k]*e**(  -dist / widths[k]  )
 
-        labels = np.zeros((w,h,1),dtype=np.int64)
+        labels = np.zeros((w,h),dtype=np.int64)
         for i in range(w):
             for j in range(h):
-                labels[i,j,0] = classifyPoint(out, (i,j))
+                labels[i,j] = classifyPoint(out, (i,j))
 
         # imageToVTK("./test",pointData={"sf":out})
 
@@ -162,58 +155,8 @@ if __name__ == "__main__":
         max_out = np.max(out)
         out = (out - min_out) / (max_out - min_out)
 
-        out = out.T.reshape(-1)
-        out_i = out_i.T.reshape(-1)
-        out_j = out_j.T.reshape(-1)
-
-        labels = labels.T.reshape(-1)
-
-        mesh_e1 = []
-        mesh_e2 = []
-
-        for i in range(w):
-            for j in range(h):
-                idx1 = j*w+i
-
-                if i != w-1:
-                    idx2 = idx1+1
-
-                    mesh_e1.append(idx1)
-                    mesh_e2.append(idx2)
-
-                    mesh_e1.append(idx2)
-                    mesh_e2.append(idx1)
-                
-                if j != h-1:
-                    idx2 = idx1 + w
-
-                    mesh_e1.append(idx1)
-                    mesh_e2.append(idx2)
-
-                    mesh_e1.append(idx2)
-                    mesh_e2.append(idx1)
-
-                    if i != 0:
-                        idx2 = idx1 + w - 1
-                        
-                        mesh_e1.append(idx1)
-                        mesh_e2.append(idx2)
-
-                        mesh_e1.append(idx2)
-                        mesh_e2.append(idx1)
-
-        edges = th.IntTensor([mesh_e1,mesh_e2])
         sf = th.FloatTensor(out)
-        i_file = th.FloatTensor(out_i)
-        j_file = th.FloatTensor(out_j)
         labels = th.IntTensor(labels)
 
-        th.save(edges, f"{data_dir}/data-{idx}-edges.th")
-        th.save(sf, f"{data_dir}/data-{idx}-sf.th")
-        th.save(i_file, f"{data_dir}/data-{idx}-i.th")
-        th.save(j_file, f"{data_dir}/data-{idx}-j.th")
-        th.save(labels, f"{data_dir}/data-{idx}-labels.th")
-
-        outf = open(f"{data_dir}/data-{idx}-meta.txt","w")
-        outf.write(f"{w}\n{h}\n")
-        outf.close()
+        th.save(sf, f"{data_dir}/data-{idx}-sf-rect.th")
+        th.save(labels, f"{data_dir}/data-{idx}-labels-rect.th")

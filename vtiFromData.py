@@ -4,8 +4,8 @@ import torch as th
 
 if __name__ == "__main__":
     data_path = "./real_data"
-    data_idx = 55
-    output_name = "./test/test"
+    data_idx = 1
+    output_name = "./test/test1"
 
     inf = open(f"{data_path}/data-{data_idx}-meta-rect.txt")
     w = int(inf.readline())

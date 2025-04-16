@@ -233,10 +233,6 @@ class inplaceCNNTwoLevel(th.nn.Module):
         xcp = F.leaky_relu(xcp)
         xcp = self.CPconv4(xcp)
 
-        C,W,H = xcp.shape
-        xcp = xcp.reshape((C,W*H))
-        xcp = th.permute(xcp, (1,0))
-
         xct = self.CTconv1(x)
         xct = F.leaky_relu(xct)
         xct = self.CTconv2(xct)
@@ -244,9 +240,5 @@ class inplaceCNNTwoLevel(th.nn.Module):
         xct = self.CTconv3(xct)
         xct = F.leaky_relu(xct)
         xct = self.CTconv4(xct)
-
-        C,W,H = xct.shape
-        xct = xct.reshape((C,W*H))
-        xct = th.permute(xct, (1,0))
 
         return xcp, xct

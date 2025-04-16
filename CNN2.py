@@ -17,14 +17,32 @@ print("Using device:", device)
 
 def cp_ct_loss(cp_logits, ct_logits, cp_lossfn, ct_lossfn, labelsCP, labelsCT, weightsCP):
     # Coarse loss for all
-    loss_cp = cp_lossfn(cp_logits,labelsCP)
+    pred = cp_logits.argmax(dim=1)
+    N,C,W,H = cp_logits.shape
+
+    pred_pos = (pred == 1).reshape((W,H))
+    pred_neg = (pred == 0).reshape((W,H))
+
+    loss_cp = cp_lossfn(cp_logits, labelsCP)
+
+    # if pred_pos.any():
+    #     loss_pred_pos = cp_lossfn(cp_logits[:,:,pred_pos],labelsCP[:,pred_pos])
+    # else:
+    #     loss_pred_pos = th.FloatTensor([0])
+    
+    # if pred_neg.any():
+    #     loss_pred_neg = cp_lossfn(cp_logits[:,:,pred_neg],labelsCP[:,pred_neg])
+    # else:
+    #     loss_pred_neg = th.FloatTensor([0])
+
+    # loss_cp = weightsCP[1]*loss_pred_pos + weightsCP[0]*loss_pred_neg
 
     # Fine loss only for samples where true class is B
-    is_cp = (labelsCP == 1)
+    is_cp = (labelsCP == 1).reshape((W,H))
     if is_cp.any():
-        loss_ct = ct_lossfn(ct_logits[is_cp],labelsCT[is_cp])
+        loss_ct = ct_lossfn(ct_logits[:,:,is_cp],labelsCT[:,is_cp])
     else:
-        loss_ct = th.tensor(0.0)
+        loss_ct = th.FloatTensor([0.0])
 
     return weightsCP[0]*loss_cp + weightsCP[1]*loss_ct
 
@@ -69,41 +87,67 @@ def measure_fc(model, loader):
             th.cuda.empty_cache()
         out = model(batch[0].to(device))
         pred = out[0].argmax(dim=1)
-        cps = (pred == 1)
-        norms = (pred == 0)
-        pred[cps] = out[1][cps].argmax(dim=1)
-        pred[norms] = 3
+
+        _,W,H = pred.shape
+
+        cps = (pred == 1).reshape((W,H))
+        norms = (pred == 0).reshape((W,H))
+        pred[:,cps] = out[1][:,:,cps].argmax(dim=1)
+        pred[:,norms] = 3
         y = batch[2].reshape((-1,))
+
+        pred = pred.reshape((-1,))
 
         for i in range(len(pred)):
             num_false[y[i]][pred[i]] += 1
+
+    normal = [0,0,0,0]
+    fp = [0,0,0,0]
+    for i in range(4):
+        normal[i] = num_false[i][i]
+        for j in range(4):
+            fp[j] += num_false[i][j]
+
+
+    fp_ratios = [0,0,0,0]
+    for i in range(4):
+        fp_ratios[i] = normal[i]/fp[i]
 
     titles = ["min","saddle","max","normal"]
 
     for i in range(4):
         print(f"{titles[i]}\t{num_false[i]}\t{num_false[i][i]/sum(num_false[i])}")
+    print(fp_ratios)
     print(f"overall: {(num_false[0][0] + num_false[1][1] + num_false[2][2] + num_false[3][3]) / (sum(num_false[0]) + sum(num_false[1]) + sum(num_false[2]) + sum(num_false[3]))}")
 
 if __name__ == "__main__":
 
-    num_data = 129
-    data_folder = "./real_data"
+    num_data = 1053
+    data_folder = "./real_data_refactored"
 
-    train_split = 120
-    val_split = 125
+    train_split = 1000
+    val_split = 1050
+
+    offset = 0
 
     train_graphs = []
     val_graphs = []
     test_graphs = []
 
-    train_data = SFData(data_folder, 0, train_split)
+    train_data = SFData(data_folder, offset, train_split + offset)
     train_loader = DataLoader(train_data, batch_size=1, shuffle=True)
-    val_loader = DataLoader(SFData(data_folder, train_split-5, val_split-5), batch_size=1, shuffle=True)
-    test_loader = DataLoader(SFData(data_folder, val_split, num_data), batch_size=1, shuffle=True)
+    val_loader = DataLoader(SFData(data_folder, train_split+offset, val_split+offset), batch_size=1, shuffle=True)
+    test_loader = DataLoader(SFData(data_folder, val_split+offset, num_data+offset), batch_size=1, shuffle=True)
 
     model = inplaceCNNTwoLevel()
+
+    model.load_state_dict(th.load("./model_firstTwo.th"))
     model = model.to(device)
-    optimizer = th.optim.Adam(model.parameters(), lr=0.02)
+    measure_fc(model, test_loader)
+    exit()
+
+    model = model.to(device)
+    optimizer = th.optim.Adam(model.parameters(), lr=0.01)
     scheduler = ExponentialLR(optimizer, gamma=0.98)
 
     weightscp = 1.0 / train_data.freqcp
@@ -111,8 +155,7 @@ if __name__ == "__main__":
 
     weightsct = 1.0 / train_data.freqct
     weightsct = weightsct / sum(weightsct)
-    
-    print(weightscp)
+
 
     loss_cp = th.nn.CrossEntropyLoss(weight=weightscp.to(device))
     loss_ct = th.nn.CrossEntropyLoss(weight=weightsct.to(device))
@@ -129,9 +172,7 @@ if __name__ == "__main__":
 
         for batch in train_loader:
             out_cp, out_ct = model(batch[0].to(device))
-            ycp = batch[1].reshape((-1,)).to(device)
-            yct = batch[2].reshape((-1,)).to(device)
-            loss_ = cp_ct_loss(out_cp, out_ct, loss_cp, loss_ct, ycp, yct, weightscp)
+            loss_ = cp_ct_loss(out_cp, out_ct, loss_cp, loss_ct, batch[1].to(device), batch[2].to(device), weightscp)
             loss += loss_
 
             if (batch_idx % batch_size == 0) or (batch_idx == len(train_data)):
@@ -147,8 +188,8 @@ if __name__ == "__main__":
         scheduler.step() # moved here from the epoch. 0.95 -> 0.97
         if device.type == 'cuda':
             th.cuda.empty_cache()
-        if epoch % 10 == 0:
-            measure_fc(model, val_loader)
+        # if epoch % 10 == 0:
+        #     measure_fc(model, val_loader)
 
     print("test errors:")
     measure_fc(model, test_loader)
