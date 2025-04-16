@@ -12,7 +12,7 @@ if platform.system() == "Darwin":  # macOS
 elif platform.system() == "Linux":  # Linux
     device = th.device("cuda") if th.cuda.is_available() else th.device("cpu")
 else:  # Default fallback for other systems
-    device = th.device("cpu")
+    device = th.device("cuda") if th.cuda.is_available() else th.device("cpu")
 print("Using device:", device)
 
 def cp_ct_loss(cp_logits, ct_logits, cp_lossfn, ct_lossfn, labelsCP, labelsCT, weightsCP):

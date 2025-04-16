@@ -8,3 +8,6 @@
 /data
 *.pth
 *.pyc
+/ori
+/real_data
+*.th
